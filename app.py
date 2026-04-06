@@ -14,8 +14,26 @@ app = Flask(__name__, static_folder="static", static_url_path="/static")
 CORS(app)
 
 # ── Config ──────────────────────────────────────────────────────────────────
-CAMERA_SOURCE = 0                        # swap to "rtsp://..." for Sparsh
-# CAMERA_SOURCE = "rtsp://admin:admin123@192.168.128.10:554/stream1"
+def _build_camera_source():
+    # Priority 1: full source from env (supports RTSP URL or webcam index like "0")
+    source_env = os.getenv("CAMERA_SOURCE", "").strip()
+    if source_env:
+        return int(source_env) if source_env.isdigit() else source_env
+
+    # Priority 2: Sparsh CCTV settings from env variables
+    sparsh_ip = os.getenv("SPARSH_CCTV_IP", "").strip()
+    if sparsh_ip:
+        sparsh_user = os.getenv("SPARSH_CCTV_USER", "admin")
+        sparsh_pass = os.getenv("SPARSH_CCTV_PASSWORD", "admin123")
+        sparsh_port = os.getenv("SPARSH_CCTV_PORT", "554")
+        sparsh_path = os.getenv("SPARSH_CCTV_PATH", "stream1").lstrip("/")
+        return f"rtsp://{sparsh_user}:{sparsh_pass}@{sparsh_ip}:{sparsh_port}/{sparsh_path}"
+
+    # Priority 3: fallback to laptop webcam
+    return 0
+
+
+CAMERA_SOURCE = _build_camera_source()
 FACE_DB_PATH  = "./face_db"
 DB_PATH       = "./attendance.db"
 FRAME_SKIP    = 5                        # run recognition every N frames
@@ -155,7 +173,12 @@ def camera_thread():
     # Lazy-import DeepFace so Flask starts fast
     from deepface import DeepFace
 
-    cap = cv2.VideoCapture(CAMERA_SOURCE)
+    if isinstance(CAMERA_SOURCE, str) and CAMERA_SOURCE.lower().startswith("rtsp://"):
+        cap = cv2.VideoCapture(CAMERA_SOURCE, cv2.CAP_FFMPEG)
+        if not cap.isOpened():
+            cap = cv2.VideoCapture(CAMERA_SOURCE)
+    else:
+        cap = cv2.VideoCapture(CAMERA_SOURCE)
     if not cap.isOpened():
         print("Camera open failed. Check CAMERA_SOURCE.")
         with frame_lock:

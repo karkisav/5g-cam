@@ -6,10 +6,9 @@ Face-recognition attendance system using OpenCV + DeepFace (ArcFace), Flask back
 
 ```bash
 # 1. Install dependencies
-pip install flask flask-cors deepface opencv-python numpy
+pip install -r requirements.txt
 
 # 2. Run the server
-cd attendance_system
 python app.py
 ```
 
@@ -42,19 +41,27 @@ attendance_system/
 
 ---
 
-## Switching to Sparsh 5G Camera
+## Sparsh CCTV Over Ethernet (Windows PowerShell)
 
-In `app.py`, change **one line**:
+Set your camera details (replace values with your actual ones):
 
-```python
-# Before (built-in webcam)
-CAMERA_SOURCE = 0
-
-# After (Sparsh RTSP stream)
-CAMERA_SOURCE = "rtsp://admin:admin@<camera_ip>:554/stream1"
+```powershell
+$env:SPARSH_CCTV_IP = "192.168.128.10"
+$env:SPARSH_CCTV_USER = "admin"
+$env:SPARSH_CCTV_PASSWORD = "admin123"
+$env:SPARSH_CCTV_PORT = "554"
+$env:SPARSH_CCTV_PATH = "stream1"
+python app.py
 ```
 
-That's it. Everything else — recognition, logging, UI — stays the same.
+Optional: if your Sparsh stream uses a different RTSP path, only change `SPARSH_CCTV_PATH`.
+
+You can also provide a full source directly:
+
+```powershell
+$env:CAMERA_SOURCE = "rtsp://admin:admin123@192.168.128.10:554/stream1"
+python app.py
+```
 
 ---
 
