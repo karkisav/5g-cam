@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>FaceAttend — Attendance System</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet"/>
+<style>
+  :root {
+    --bg:       #0a0c0f;
+    --surface:  #111418;
+    --surface2: #181c22;
+    --border:   #1e242d;
+    --accent:   #00e5a0;
+    --warn:     #ff4e4e;
+    --text:     #e8edf5;
+    --muted:    #5a6478;
+    --mono:     'Space Mono', monospace;
+    --sans:     'Syne', sans-serif;
+  }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; overflow-x: hidden; }
+
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 18px 32px; border-bottom: 1px solid var(--border);
+    background: var(--surface); position: sticky; top: 0; z-index: 50;
+  }
+  .logo { font-size: 1.25rem; font-weight: 800; letter-spacing: -0.5px; }
+  .logo span { color: var(--accent); }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .status-pill {
+    display: flex; align-items: center; gap: 8px; font-family: var(--mono); font-size: .7rem;
+    padding: 6px 14px; border-radius: 999px; background: #0d1a14;
+    border: 1px solid var(--accent); color: var(--accent);
+  }
+  .status-pill .dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 8px var(--accent); animation: pulse 1.5s infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  .today-badge {
+    font-family: var(--mono); font-size: .7rem; color: var(--muted);
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+  }
+  .session-badge {
+    font-family: var(--mono); font-size: .7rem; color: var(--muted);
+    padding: 6px 14px; border: 1px solid var(--border); border-radius: 999px;
+  }
+  #today-count { color: var(--text); font-weight: 700; }
+  #session-count, #detected-count { color: var(--text); font-weight: 700; }
+  .btn-enroll-new {
+    display: flex; align-items: center; gap: 8px; padding: 8px 18px;
+    border-radius: 6px; border: none; cursor: pointer; background: var(--accent);
+    color: #000; font-family: var(--mono); font-size: .75rem; font-weight: 700;
+    transition: filter .15s;
+  }
+  .btn-enroll-new:hover { filter: brightness(1.15); }
+  .btn-surveillance {
+    padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer;
+    font-family: var(--mono); font-size: .72rem; font-weight: 700;
+    transition: filter .15s, opacity .15s;
+  }
+  .btn-surveillance.stop { background: var(--warn); color: #fff; }
+  .btn-surveillance.start { background: var(--accent); color: #000; }
+  .btn-surveillance:hover:not(:disabled) { filter: brightness(1.1); }
+  .btn-surveillance:disabled { opacity: .5; cursor: not-allowed; }
+
+  .grid { display: grid; grid-template-columns: 1fr 380px; height: calc(100vh - 65px); }
+
+  .camera-panel { border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .panel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .panel-title { font-size: .7rem; font-family: var(--mono); letter-spacing: 2px; text-transform: uppercase; color: var(--muted); }
+  .panel-title strong { color: var(--text); }
+  .feed-wrapper {
+    flex: 1; position: relative; background: #050608; overflow: hidden;
+    display: flex; align-items: center; justify-content: center;
+  }
+  #camera-feed { width: 100%; height: 100%; object-fit: contain; display: block; }
+  .feed-overlay { position: absolute; inset: 0; pointer-events: none; }
+  .feed-overlay::before, .feed-overlay::after {
+    content: ''; position: absolute; width: 40px; height: 40px;
+    border-color: var(--accent); border-style: solid; opacity: .5;
+  }
+  .feed-overlay::before { top: 16px; left: 16px; border-width: 2px 0 0 2px; }
+  .feed-overlay::after  { top: 16px; right: 16px; border-width: 2px 2px 0 0; }
+  .corner-bl, .corner-br {
+    position: absolute; width: 40px; height: 40px;
+    border-color: var(--accent); border-style: solid; opacity: .5;
+  }
+  .corner-bl { bottom: 16px; left: 16px; border-width: 0 0 2px 2px; }
+  .corner-br { bottom: 16px; right: 16px; border-width: 0 2px 2px 0; }
+  .no-feed {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    color: var(--muted); font-family: var(--mono); font-size: .75rem;
+  }
+  .no-feed svg { opacity: .3; }
+  .live-detections {
+    padding: 10px 20px; background: var(--surface); border-top: 1px solid var(--border);
+    min-height: 44px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  }
+  .det-label {
+    font-family: var(--mono); font-size: .65rem; padding: 4px 10px; border-radius: 4px;
+    border: 1px solid var(--accent); color: var(--accent); background: #0a1a12;
+    animation: fadeIn .3s ease;
+  }
+  .det-label.unknown { border-color: var(--warn); color: var(--warn); background: #1a0a0a; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(4px)} to{opacity:1;transform:none} }
+
+  .right-col { display: flex; flex-direction: column; overflow: hidden; }
+  .enrolled-section { padding: 16px 20px; border-bottom: 1px solid var(--border); }
+  .section-label {
+    font-size: .65rem; font-family: var(--mono); letter-spacing: 2px;
+    text-transform: uppercase; color: var(--muted); margin-bottom: 12px;
+  }
+  .enrolled-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    font-family: var(--mono); font-size: .65rem; padding: 4px 10px; border-radius: 4px;
+    background: var(--surface2); border: 1px solid var(--border); color: var(--text);
+  }
+  .chip-empty { color: var(--muted); font-style: italic; font-size: .7rem; }
+
+  .attendance-section { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+  .attendance-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 20px; border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .date-filter {
+    background: var(--bg); border: 1px solid var(--border); color: var(--text);
+    font-family: var(--mono); font-size: .7rem; padding: 5px 10px;
+    border-radius: 4px; outline: none; cursor: pointer;
+  }
+  .date-filter:focus { border-color: var(--accent); }
+  #attendance-list { flex: 1; overflow-y: auto; }
+  #attendance-list::-webkit-scrollbar { width: 4px; }
+  #attendance-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .att-row {
+    display: grid; grid-template-columns: 1fr auto auto; align-items: center;
+    padding: 12px 20px; border-bottom: 1px solid var(--border); gap: 8px; transition: background .15s;
+  }
+  .att-row:hover { background: var(--surface); }
+  .att-name { font-weight: 600; font-size: .9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .att-time { font-family: var(--mono); font-size: .65rem; color: var(--muted); white-space: nowrap; }
+  .att-conf {
+    font-family: var(--mono); font-size: .65rem; padding: 2px 7px; border-radius: 3px;
+    background: #0a1a12; color: var(--accent); border: 1px solid #0d2b1a;
+  }
+  .att-empty { padding: 40px 20px; text-align: center; font-family: var(--mono); font-size: .75rem; color: var(--muted); }
+  .export-row { padding: 12px 20px; background: var(--surface); border-top: 1px solid var(--border); }
+  .btn-outline {
+    width: 100%; background: transparent; border: 1px solid var(--border); color: var(--muted);
+    font-family: var(--mono); font-size: .7rem; padding: 10px; border-radius: 6px;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-outline:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ═══ MODAL ═══ */
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 200; background: rgba(0,0,0,.85);
+    backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center;
+    opacity: 0; pointer-events: none; transition: opacity .25s;
+  }
+  .modal-backdrop.open { opacity: 1; pointer-events: all; }
+  .modal {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    width: 560px; max-width: 95vw; overflow: hidden;
+    transform: translateY(20px) scale(.97); transition: transform .25s;
+    box-shadow: 0 40px 80px rgba(0,0,0,.6);
+  }
+  .modal-backdrop.open .modal { transform: none; }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px; border-bottom: 1px solid var(--border);
+  }
+  .modal-title { font-size: 1.1rem; font-weight: 800; }
+  .modal-title span { color: var(--accent); }
+  .modal-close {
+    width: 32px; height: 32px; border-radius: 6px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); cursor: pointer;
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem; transition: all .15s;
+  }
+  .modal-close:hover { border-color: var(--warn); color: var(--warn); }
+  .modal-body { padding: 24px; display: flex; flex-direction: column; gap: 18px; }
+
+  .modal-input {
+    width: 100%; background: var(--bg); border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text); font-family: var(--mono); font-size: .85rem;
+    padding: 12px 16px; outline: none; transition: border-color .2s;
+  }
+  .modal-input:focus { border-color: var(--accent); }
+  .modal-input::placeholder { color: var(--muted); }
+
+  .preview-area {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: #050608; aspect-ratio: 4/3; border: 1px solid var(--border);
+  }
+  #enroll-video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  .scan-line {
+    position: absolute; left: 0; right: 0; height: 2px;
+    background: linear-gradient(90deg, transparent, var(--accent), transparent);
+    opacity: .6; animation: scan 2s linear infinite; pointer-events: none;
+  }
+  @keyframes scan { 0%{top:0%} 100%{top:100%} }
+  .face-reticle {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%,-50%);
+    width: 160px; height: 200px; border: 2px solid rgba(0,229,160,.35); border-radius: 50%;
+    pointer-events: none;
+  }
+  .flash-overlay {
+    position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .05s;
+  }
+  .countdown-overlay {
+    position: absolute; top: 12px; right: 12px; width: 44px; height: 44px; display: none;
+  }
+  .countdown-overlay.show { display: block; }
+  .countdown-ring { transform: rotate(-90deg); }
+  .countdown-ring circle { transition: stroke-dashoffset .65s linear; }
+  .countdown-num {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-size: 1rem; font-weight: 700; color: var(--accent);
+  }
+  .no-cam-msg {
+    position: absolute; inset: 0; display: none; flex-direction: column;
+    align-items: center; justify-content: center; gap: 10px;
+    font-family: var(--mono); font-size: .75rem; color: var(--muted);
+  }
+  .no-cam-msg svg { opacity: .3; }
+
+  .shot-strip { display: flex; gap: 8px; }
+  .shot-thumb {
+    flex: 1; aspect-ratio: 4/3; border-radius: 6px; background: var(--bg);
+    border: 1px solid var(--border); overflow: hidden; position: relative;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .shot-thumb.pending::after {
+    content: attr(data-n); font-family: var(--mono); font-size: .7rem; color: var(--muted);
+  }
+  .shot-thumb.done { border-color: var(--accent); }
+  .shot-thumb img { width: 100%; height: 100%; object-fit: cover; }
+  .shot-tick {
+    position: absolute; inset: 0; background: rgba(0,229,160,.18);
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+  }
+
+  .progress-bar-track { height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; background: var(--accent); border-radius: 2px; transition: width .4s ease; width: 0%; }
+
+  .modal-status { font-family: var(--mono); font-size: .75rem; color: var(--muted); min-height: 18px; text-align: center; }
+  .modal-status.ok  { color: var(--accent); }
+  .modal-status.err { color: var(--warn); }
+
+  .modal-footer { display: flex; gap: 10px; padding: 0 24px 24px; }
+  .btn-start {
+    flex: 1; padding: 12px; border-radius: 8px; border: none; cursor: pointer;
+    background: var(--accent); color: #000; font-family: var(--mono); font-size: .8rem; font-weight: 700;
+    transition: filter .15s;
+  }
+  .btn-start:hover:not(:disabled) { filter: brightness(1.15); }
+  .btn-start:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-cancel-modal {
+    padding: 12px 20px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--muted); font-family: var(--mono); font-size: .8rem;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-cancel-modal:hover { border-color: var(--warn); color: var(--warn); }
+  .btn-secondary-modal {
+    padding: 12px 16px; border-radius: 8px; border: 1px solid var(--border);
+    background: transparent; color: var(--text); font-family: var(--mono); font-size: .74rem;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-secondary-modal:hover { border-color: var(--accent); color: var(--accent); }
+  .btn-secondary-modal.hidden { display: none; }
+
+  @media (max-width:900px) {
+    .grid { grid-template-columns: 1fr; height: auto; }
+    .camera-panel { border-right: none; border-bottom: 1px solid var(--border); }
+    .feed-wrapper { height: 55vw; min-height: 240px; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">Face<span>Attend</span></div>
+  <div class="header-right">
+    <div class="today-badge">Today: <span id="today-count">0</span> present</div>
+    <div class="session-badge">Session: <span id="session-count">0</span> students</div>
+    <div class="session-badge">Detected: <span id="detected-count">0</span> faces</div>
+    <div class="status-pill" id="status-pill">
+      <div class="dot"></div><span id="status-text">CONNECTING</span>
+    </div>
+    <button class="btn-surveillance stop" id="btn-surveillance" onclick="toggleSurveillance()">Stop Feed</button>
+    <button class="btn-enroll-new" onclick="openEnrollModal()">
+      <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+        <circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/>
+        <line x1="19" y1="3" x2="19" y2="9"/><line x1="16" y1="6" x2="22" y2="6"/>
+      </svg>
+      Enroll Face
+    </button>
+  </div>
+</header>
+
+<div class="grid">
+  <div class="camera-panel">
+    <div class="panel-header">
+      <span class="panel-title">// <strong>LIVE FEED</strong></span>
+      <span style="font-family:var(--mono);font-size:.65rem;color:var(--muted)">CAM:0 (built-in)</span>
+    </div>
+    <div class="feed-wrapper">
+      <img id="camera-feed" src="http://localhost:5050/video_feed" alt="Live Feed"
+           onerror="this.style.display='none';document.getElementById('no-feed').style.display='flex'"/>
+      <div class="feed-overlay"><div class="corner-bl"></div><div class="corner-br"></div></div>
+      <div class="no-feed" id="no-feed">
+        <svg width="48" height="48" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+          <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+          <line x1="1" y1="1" x2="23" y2="23"/>
+        </svg>
+        <span id="no-feed-text">Camera not reachable — make sure app.py is running</span>
+      </div>
+    </div>
+    <div class="live-detections" id="live-detections">
+      <span style="font-family:var(--mono);font-size:.65rem;color:var(--muted)">No faces in frame</span>
+    </div>
+  </div>
+
+  <div class="right-col">
+    <div class="enrolled-section">
+      <div class="section-label">// Enrolled Faces</div>
+      <div class="enrolled-chips" id="enrolled-chips">
+        <span class="chip-empty">No faces enrolled yet</span>
+      </div>
+    </div>
+    <div class="attendance-section">
+      <div class="attendance-header">
+        <span class="section-label" style="margin:0">// Attendance Log</span>
+        <input type="date" class="date-filter" id="date-filter" onchange="loadAttendance()"/>
+      </div>
+      <div id="attendance-list"></div>
+      <div class="export-row">
+        <button class="btn-outline" onclick="exportCSV()">↓ Export CSV</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ENROLLMENT MODAL -->
+<div class="modal-backdrop" id="enroll-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">Enroll <span>New Face</span></div>
+      <button class="modal-close" onclick="closeEnrollModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input class="modal-input" id="modal-name" type="text" placeholder="Enter full name…" autocomplete="off"/>
+
+      <div class="preview-area">
+        <video id="enroll-video" autoplay playsinline muted></video>
+        <div class="scan-line"></div>
+        <div class="face-reticle"></div>
+        <div class="flash-overlay" id="flash-overlay"></div>
+        <div class="countdown-overlay" id="countdown-overlay">
+          <svg class="countdown-ring" width="44" height="44" viewBox="0 0 44 44">
+            <circle cx="22" cy="22" r="18" fill="rgba(0,0,0,.5)" stroke="#1e242d" stroke-width="3"/>
+            <circle id="ring-circle" cx="22" cy="22" r="18" fill="none"
+                    stroke="var(--accent)" stroke-width="3" stroke-dasharray="113" stroke-dashoffset="113"/>
+          </svg>
+          <div class="countdown-num" id="countdown-num">3</div>
+        </div>
+        <div class="no-cam-msg" id="no-cam-msg">
+          <svg width="40" height="40" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+            <path d="M15 10l4.553-2.276A1 1 0 0121 8.723v6.554a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+          </svg>
+          <span>Camera permission denied</span>
+        </div>
+      </div>
+
+      <div class="shot-strip" id="shot-strip"></div>
+
+      <div class="progress-bar-track">
+        <div class="progress-bar-fill" id="progress-fill"></div>
+      </div>
+
+      <div class="modal-status" id="modal-status">
+        Position your face in the oval, then click Start.
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn-cancel-modal" onclick="closeEnrollModal()">Cancel</button>
+      <button class="btn-secondary-modal hidden" id="btn-use-server" onclick="useServerFallback()">Use Server Feed Instead</button>
+      <button class="btn-start" id="btn-start" onclick="startCapture()">▶ Start (5 photos)</button>
+    </div>
+  </div>
+</div>
+
+<canvas id="snap-canvas" style="display:none"></canvas>
+
+<script>
+const API = (window.location.origin && window.location.origin.startsWith('http'))
+  ? window.location.origin
+  : 'http://localhost:5050';
+const TOTAL_SHOTS = 5;
+
+let mediaStream = null;
+let captureInProgress = false;
+let shotsTaken = 0;
+let enrollMode = 'browser';
+let cameraLive = false;
+
+function updateSurveillanceButton() {
+  const btn = document.getElementById('btn-surveillance');
+  if (!btn) return;
+  if (cameraLive) {
+    btn.textContent = 'Stop Feed';
+    btn.classList.remove('start');
+    btn.classList.add('stop');
+  } else {
+    btn.textContent = 'Start Surveillance';
+    btn.classList.remove('stop');
+    btn.classList.add('start');
+  }
+}
+
+function setFeedState(isLive) {
+  const img = document.getElementById('camera-feed');
+  const noFeed = document.getElementById('no-feed');
+  const noFeedText = document.getElementById('no-feed-text');
+
+  if (isLive) {
+    noFeedText.textContent = 'Camera not reachable - make sure app.py is running';
+    noFeed.style.display = 'none';
+    img.style.display = 'block';
+    if (!img.src || img.src === 'about:blank') {
+      img.src = `${API}/video_feed?t=${Date.now()}`;
+    }
+    return;
+  }
+
+  img.style.display = 'none';
+  img.src = 'about:blank';
+  noFeedText.textContent = 'Feed stopped. Click Start Surveillance to resume.';
+  noFeed.style.display = 'flex';
+}
+
+function showServerFallbackButton(show) {
+  const btn = document.getElementById('btn-use-server');
+  if (!btn) return;
+  btn.classList.toggle('hidden', !show);
+}
+
+function describeCameraError(err) {
+  const errName = err && err.name ? err.name : '';
+  if (!window.isSecureContext) {
+    return 'Browser camera requires a secure page. Open the app at http://localhost:5050 (not file://).';
+  }
+  if (errName === 'NotAllowedError') {
+    return 'Camera permission denied by browser. Allow camera access in browser site settings and retry.';
+  }
+  if (errName === 'NotFoundError') {
+    return 'No webcam found. Connect a camera and retry.';
+  }
+  if (errName === 'NotReadableError' || errName === 'TrackStartError') {
+    return 'Camera is busy in another app/tab. Close other apps using the camera and retry.';
+  }
+  return `Could not open browser camera${errName ? ` (${errName})` : ''}.`;
+}
+
+async function toggleSurveillance() {
+  const btn = document.getElementById('btn-surveillance');
+  const action = cameraLive ? 'stop' : 'start';
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/surveillance/${action}`, { method: 'POST' });
+    const d = await res.json();
+    if (!res.ok || !d.success) {
+      throw new Error(d.error || 'Request failed');
+    }
+    cameraLive = Boolean(d.camera);
+    setFeedState(cameraLive);
+    updateSurveillanceButton();
+    await pollStatus();
+  } catch (e) {
+    alert(`Could not ${action} surveillance: ${e.message || 'Unknown error'}`);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Polling ──────────────────────────────────────────────────────────────
+async function pollStatus() {
+  try {
+    const d = await fetch(`${API}/api/status`).then(r=>r.json());
+    const pill = document.getElementById('status-pill');
+    const txt  = document.getElementById('status-text');
+    cameraLive = Boolean(d.camera);
+    txt.textContent = cameraLive ? 'LIVE' : 'OFFLINE';
+    if (!cameraLive) {
+      pill.style.cssText = 'border-color:var(--warn);color:var(--warn)';
+      pill.querySelector('.dot').style.background = 'var(--warn)';
+      pill.querySelector('.dot').style.boxShadow = '0 0 8px var(--warn)';
+    } else {
+      pill.style.cssText = 'border-color:var(--accent);color:var(--accent)';
+      pill.querySelector('.dot').style.background = 'var(--accent)';
+      pill.querySelector('.dot').style.boxShadow = '0 0 8px var(--accent)';
+    }
+    document.getElementById('today-count').textContent = d.today_count || 0;
+    document.getElementById('session-count').textContent = d.session_count || 0;
+    document.getElementById('detected-count').textContent = d.current_total_faces || 0;
+    setFeedState(cameraLive);
+    updateSurveillanceButton();
+  } catch {
+    cameraLive = false;
+    document.getElementById('status-text').textContent = 'OFFLINE';
+    document.getElementById('session-count').textContent = '0';
+    document.getElementById('detected-count').textContent = '0';
+    setFeedState(false);
+    updateSurveillanceButton();
+  }
+}
+
+async function pollDetections() {
+  try {
+    const dets = await fetch(`${API}/api/detections`).then(r=>r.json());
+    document.getElementById('detected-count').textContent = dets.length;
+    const el = document.getElementById('live-detections');
+    if (!dets.length) {
+      el.innerHTML = '<span style="font-family:var(--mono);font-size:.65rem;color:var(--muted)">No faces in frame</span>';
+      return;
+    }
+    el.innerHTML = dets.map(d=>{
+      const cls  = d.name==='Unknown'?'det-label unknown':'det-label';
+      const conf = d.name!=='Unknown'?` · ${(d.confidence*100).toFixed(0)}%`:'';
+      return `<span class="${cls}">${d.name}${conf}</span>`;
+    }).join('');
+  } catch {
+    document.getElementById('detected-count').textContent = '0';
+  }
+}
+
+async function loadAttendance() {
+  const date = document.getElementById('date-filter').value;
+  try {
+    const rows = await fetch(`${API}/api/attendance?date=${date}`).then(r=>r.json());
+    const el = document.getElementById('attendance-list');
+    if (!rows.length) { el.innerHTML=`<div class="att-empty">No records for ${date}</div>`; return; }
+    el.innerHTML = rows.map(r=>`
+      <div class="att-row">
+        <div class="att-name">${r.name}</div>
+        <div class="att-time">${r.time}</div>
+        <div class="att-conf">${r.confidence?(r.confidence*100).toFixed(0)+'%':'—'}</div>
+      </div>`).join('');
+  } catch { document.getElementById('attendance-list').innerHTML='<div class="att-empty">Cannot connect to server</div>'; }
+}
+
+async function loadEnrolled() {
+  try {
+    const list = await fetch(`${API}/api/enrolled`).then(r=>r.json());
+    document.getElementById('enrolled-chips').innerHTML = list.length
+      ? list.map(p=>`<span class="chip">${p.name}</span>`).join('')
+      : '<span class="chip-empty">No faces enrolled yet</span>';
+  } catch {}
+}
+
+async function exportCSV() {
+  try {
+    const rows = await fetch(`${API}/api/attendance/all`).then(r=>r.json());
+    if (!rows.length) { alert('No records to export'); return; }
+    const csv = 'Name,Date,Time,Confidence\n'+rows.map(r=>`"${r.name}",${r.date},${r.time},${r.confidence||''}`).join('\n');
+    const a = Object.assign(document.createElement('a'),{
+      href: URL.createObjectURL(new Blob([csv],{type:'text/csv'})), download:'attendance.csv'
+    });
+    a.click();
+  } catch { alert('Could not fetch records'); }
+}
+
+// ── Modal ────────────────────────────────────────────────────────────────
+async function openEnrollModal() {
+  shotsTaken = 0; captureInProgress = false;
+  enrollMode = 'browser';
+  document.getElementById('modal-name').value = '';
+  document.getElementById('btn-start').disabled = false;
+  document.getElementById('btn-start').textContent = `▶ Start (${TOTAL_SHOTS} photos)`;
+  setStatus('Position your face in the oval, then click Start.', '');
+  document.getElementById('progress-fill').style.width = '0%';
+  showServerFallbackButton(false);
+  buildShotStrip();
+  document.getElementById('enroll-modal').classList.add('open');
+
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('MediaDevices API not available');
+    }
+    mediaStream = await navigator.mediaDevices.getUserMedia({
+      video: { width:{ideal:640}, height:{ideal:480}, facingMode:'user' }
+    });
+    document.getElementById('enroll-video').srcObject = mediaStream;
+    document.getElementById('no-cam-msg').style.display = 'none';
+    document.getElementById('btn-start').disabled = false;
+    showServerFallbackButton(false);
+  } catch (err) {
+    enrollMode = 'browser';
+    document.getElementById('no-cam-msg').style.display = 'flex';
+    setStatus(describeCameraError(err), 'err');
+    document.getElementById('btn-start').disabled = true;
+    showServerFallbackButton(true);
+  }
+}
+
+function useServerFallback() {
+  enrollMode = 'server';
+  setStatus('Using server feed capture mode. Click Start to enroll from live feed.', '');
+  document.getElementById('btn-start').disabled = false;
+  showServerFallbackButton(false);
+}
+
+function closeEnrollModal() {
+  document.getElementById('enroll-modal').classList.remove('open');
+  if (mediaStream) { mediaStream.getTracks().forEach(t=>t.stop()); mediaStream = null; }
+  captureInProgress = false;
+  showServerFallbackButton(false);
+}
+
+document.getElementById('enroll-modal').addEventListener('click', e => {
+  if (e.target === document.getElementById('enroll-modal')) closeEnrollModal();
+});
+
+function buildShotStrip() {
+  document.getElementById('shot-strip').innerHTML =
+    Array.from({length:TOTAL_SHOTS},(_,i)=>
+      `<div class="shot-thumb pending" id="thumb-${i}" data-n="${i+1}"></div>`
+    ).join('');
+}
+
+function showCountdown() {
+  return new Promise(resolve => {
+    const overlay = document.getElementById('countdown-overlay');
+    const numEl   = document.getElementById('countdown-num');
+    const circle  = document.getElementById('ring-circle');
+    overlay.classList.add('show');
+    let n = 3;
+    const tick = () => {
+      numEl.textContent = n;
+      circle.style.strokeDashoffset = 113 - (113 * (n/3));
+      n--;
+      if (n < 0) { overlay.classList.remove('show'); resolve(); }
+      else setTimeout(tick, 700);
+    };
+    tick();
+  });
+}
+
+function flash() {
+  const el = document.getElementById('flash-overlay');
+  el.style.opacity = '.8';
+  setTimeout(()=>{ el.style.opacity='0'; }, 120);
+}
+
+function snapFrame() {
+  const video  = document.getElementById('enroll-video');
+  const canvas = document.getElementById('snap-canvas');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  const ctx = canvas.getContext('2d');
+  // un-mirror so saved image has correct orientation
+  ctx.translate(canvas.width, 0); ctx.scale(-1, 1);
+  ctx.drawImage(video, 0, 0);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
+function markThumb(i, dataUrl) {
+  const t = document.getElementById(`thumb-${i}`);
+  t.classList.replace('pending','done');
+  t.innerHTML = `<img src="${dataUrl}"/><div class="shot-tick">✓</div>`;
+}
+
+function markThumbServer(i) {
+  const t = document.getElementById(`thumb-${i}`);
+  t.classList.replace('pending','done');
+  t.innerHTML = `<div class="shot-tick">✓ Saved</div>`;
+}
+
+async function startCapture() {
+  const name = document.getElementById('modal-name').value.trim();
+  if (!name) { setStatus('Enter a name first.', 'err'); document.getElementById('modal-name').focus(); return; }
+  if (captureInProgress) return;
+  captureInProgress = true;
+  document.getElementById('btn-start').disabled = true;
+
+  if (enrollMode === 'server') {
+    for (let i = 0; i < TOTAL_SHOTS; i++) {
+      setStatus(`Get ready for capture ${i+1} of ${TOTAL_SHOTS} from live feed...`, '');
+      await showCountdown();
+      setStatus(`Saving photo ${i+1}...`, '');
+
+      try {
+        const res = await fetch(`${API}/api/enroll`, {
+          method:'POST', headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({name})
+        });
+        const d = await res.json();
+        if (!res.ok || d.error) {
+          setStatus(`Error: ${d.error || 'Could not capture from live feed'}`, 'err');
+          captureInProgress = false;
+          document.getElementById('btn-start').disabled = false;
+          return;
+        }
+      } catch {
+        setStatus('Capture failed - is the server running?', 'err');
+        captureInProgress = false;
+        document.getElementById('btn-start').disabled = false;
+        return;
+      }
+
+      markThumbServer(i);
+      shotsTaken++;
+      document.getElementById('progress-fill').style.width = `${(shotsTaken/TOTAL_SHOTS)*100}%`;
+
+      if (i < TOTAL_SHOTS - 1) await sleep(400);
+    }
+
+    setStatus(`✓ ${name} enrolled from live feed with ${TOTAL_SHOTS} photos!`, 'ok');
+    document.getElementById('btn-start').textContent = '✓ Done';
+    captureInProgress = false;
+    loadEnrolled();
+    setTimeout(closeEnrollModal, 2000);
+    return;
+  }
+
+  for (let i = 0; i < TOTAL_SHOTS; i++) {
+    setStatus(`Get ready for photo ${i+1} of ${TOTAL_SHOTS}…`, '');
+    await showCountdown();
+
+    const dataUrl = snapFrame();
+    flash();
+    markThumb(i, dataUrl);
+    setStatus(`Uploading photo ${i+1}…`, '');
+
+    try {
+      const res = await fetch(`${API}/api/enroll_image`, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({name, image: dataUrl})
+      });
+      const d = await res.json();
+      if (!d.success) { setStatus(`Error: ${d.error}`, 'err'); captureInProgress=false; document.getElementById('btn-start').disabled=false; return; }
+    } catch {
+      setStatus('Upload failed — is the server running?', 'err');
+      captureInProgress=false; document.getElementById('btn-start').disabled=false; return;
+    }
+
+    shotsTaken++;
+    document.getElementById('progress-fill').style.width = `${(shotsTaken/TOTAL_SHOTS)*100}%`;
+
+    // small gap between shots (except after last)
+    if (i < TOTAL_SHOTS - 1) await sleep(400);
+  }
+
+  setStatus(`✓ ${name} enrolled with ${TOTAL_SHOTS} photos!`, 'ok');
+  document.getElementById('btn-start').textContent = '✓ Done';
+  captureInProgress = false;
+  loadEnrolled();
+  setTimeout(closeEnrollModal, 2000);
+}
+
+function setStatus(msg, type) {
+  const el = document.getElementById('modal-status');
+  el.textContent = msg;
+  el.className = 'modal-status' + (type ? ' '+type : '');
+}
+
+const sleep = ms => new Promise(r=>setTimeout(r,ms));
+
+// Init
+document.getElementById('date-filter').value = new Date().toISOString().split('T')[0];
+pollStatus();     setInterval(pollStatus,     5000);
+pollDetections(); setInterval(pollDetections, 1500);
+loadAttendance(); setInterval(loadAttendance, 8000);
+loadEnrolled();   setInterval(loadEnrolled,  10000);
+</script>
+</body>
+</html>
