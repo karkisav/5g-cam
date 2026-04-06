@@ -36,7 +36,9 @@ def _build_camera_source():
 CAMERA_SOURCE = _build_camera_source()
 FACE_DB_PATH  = "./face_db"
 DB_PATH       = "./attendance.db"
-FRAME_SKIP    = 5                        # run recognition every N frames
+FRAME_SKIP    = 15                       # run recognition every N frames (increased for performance)
+FRAME_RESIZE  = 0.6                      # downscale to 60% for faster processing
+JPEG_QUALITY  = 70                       # lower quality = faster encoding (was 80)
 # ────────────────────────────────────────────────────────────────────────────
 
 # Global state
@@ -174,6 +176,10 @@ def camera_thread():
     from deepface import DeepFace
 
     if isinstance(CAMERA_SOURCE, str) and CAMERA_SOURCE.lower().startswith("rtsp://"):
+        os.environ.setdefault(
+            "OPENCV_FFMPEG_CAPTURE_OPTIONS",
+            "rtsp_transport;tcp|fflags;nobuffer|flags;low_delay|max_delay;500000|reorder_queue_size;0"
+        )
         cap = cv2.VideoCapture(CAMERA_SOURCE, cv2.CAP_FFMPEG)
         if not cap.isOpened():
             cap = cv2.VideoCapture(CAMERA_SOURCE)
@@ -191,9 +197,15 @@ def camera_thread():
         return
 
     cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 360)
     frame_count = 0
 
     while camera_running:
+        # Drop queued frames so we stay closer to live video.
+        for _ in range(2):
+            cap.grab()
+
         ret, frame = cap.read()
         if not ret:
             time.sleep(0.05)
@@ -314,7 +326,10 @@ def generate_frames():
         if frame is None:
             time.sleep(0.03)
             continue
-        ret, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        # Resize for faster encoding
+        h, w = frame.shape[:2]
+        frame_small = cv2.resize(frame, (int(w * FRAME_RESIZE), int(h * FRAME_RESIZE)))
+        ret, buf = cv2.imencode(".jpg", frame_small, [cv2.IMWRITE_JPEG_QUALITY, JPEG_QUALITY])
         if not ret:
             continue
         yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + buf.tobytes() + b"\r\n")
@@ -477,4 +492,5 @@ if __name__ == "__main__":
     print("🚀 Attendance server running at http://localhost:5050")
     print(f"📁 Face DB: {os.path.abspath(FACE_DB_PATH)}")
     print(f"🗄️  SQLite:  {os.path.abspath(DB_PATH)}")
-    app.run(host="0.0.0.0", port=5050, debug=True, use_reloader=False, threaded=True)
+    print(f"⚡ Frame skip: {FRAME_SKIP}, Resize: {FRAME_RESIZE*100:.0f}%, JPEG: {JPEG_QUALITY}")
+    app.run(host="0.0.0.0", port=5050, debug=False, threaded=True)

@@ -50,7 +50,7 @@ $env:SPARSH_CCTV_IP = "192.168.128.10"
 $env:SPARSH_CCTV_USER = "admin"
 $env:SPARSH_CCTV_PASSWORD = "admin123"
 $env:SPARSH_CCTV_PORT = "554"
-$env:SPARSH_CCTV_PATH = "stream1"
+$env:SPARSH_CCTV_PATH = "h264/ch1/main/av_stream"
 python app.py
 ```
 
