@@ -53,12 +53,12 @@ $env:SPARSH_CCTV_PORT = "554"
 $env:SPARSH_CCTV_PATH = "h264/ch1/main/av_stream"
 python app.py
 ```
-export SPARSH_CCTV_IP=192.168.128.10
+```export SPARSH_CCTV_IP=192.168.128.10
 export SPARSH_CCTV_USER=admin
 export SPARSH_CCTV_PASSWORD=admin123
 export SPARSH_CCTV_PORT=554
 export SPARSH_CCTV_PATH=h264/ch1/main/av_stream
-python app.py
+python app.py```
 
 
 Optional: if your Sparsh stream uses a different RTSP path, only change `SPARSH_CCTV_PATH`.
